@@ -219,6 +219,7 @@ function isSubset(subset, object) {
         // Remove the edge that is to be replaced.
         delete this.graph.edges[match.edge.id];
         if (rule.rhs.subgraph) {
+          console.warn(JSON.stringify(match));
           let subgraphResult = rule.rhs.subgraph({ src: match.src, dest: match.dest, edge: match.edge });
           if (subgraphResult) {
             const idMap = {};
@@ -310,7 +311,7 @@ function isSubset(subset, object) {
           lhs: { edge: { type: "path" } },
           rhs: {
             edge: null,
-            subgraph: ({ src, dest, edge }) => ({
+            subgraph: ({ src, dest, edge }) => { console.warn({src,dest,edge}); return ({
               nodes: [
                 { id: "key", label: { type: "key" } },
                 { id: "door", label: { type: "door" } }
@@ -319,9 +320,10 @@ function isSubset(subset, object) {
                 { src: src.id, dest: "key", label: { type: "path" } },
                 { src: "key", dest: src.id, label: { type: "backtrack" } },
                 { src: src.id, dest: "door", label: { type: "path" } },
-                { src: "door", dest: dest.id, label: { type: "path" } }
+                { src: "door", dest: dest.id, label: { type: "path" } },
+                { src: "key", dest: "door", label: { type: "opens" } },
               ]
-            })
+            }) }
           }
         },
         {
@@ -346,19 +348,45 @@ function isSubset(subset, object) {
     ]
   };
   
-  // ------------------------ Initial Graph ------------------------
-  
-  // A simple substrate graph with two nodes and one "path" edge.
-  const initialGraph = {
-    nodes: {
-      start: { id: "start", label: { type: "start" } },
-      end: { id: "end", label: { type: "end" } }
-    },
-    edges: {
-      e0: { id: "e0", src: "start", dest: "end", label: { type: "path" } }
-    }
+/**
+ * Builds a graph object from lists of nodes and edges.
+ * @param {Array} nodes - List of node objects with "id" properties.
+ * @param {Array} edges - List of edge objects with "id", "src", and "dest" properties.
+ * @returns {Object} Graph object with "nodes" and "edges" dictionaries.
+ */
+function buildGraph(nodes, edges) {
+  const graph = {
+    nodes: {},
+    edges: {}
   };
-  
+
+  for (const node of nodes) {
+    graph.nodes[node.id] = node;
+  }
+
+  let e = 0;
+  for (const edge of edges) {
+    edge.id = edge.id || `edge_${++e}`;
+    graph.edges[edge.id] = edge;
+  }
+
+  return graph;
+}
+
+// ------------------------ Initial Graph ------------------------
+
+const initialNodes = [
+  { id: "start", label: { type: "start" } },
+  { id: "goal", label: { type: "win" } }
+];
+
+const initialEdges = [
+  { src: "start", dest: "goal", label: { type: "path" } }
+];
+
+const initialGraph = buildGraph(initialNodes, initialEdges);
+
+
   // ------------------------ Running the Simulator ------------------------
 
   // Converts the graph to a DOT-format string.
