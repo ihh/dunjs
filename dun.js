@@ -7,6 +7,40 @@ const seedrandom = require('seedrandom'); // Add this dependency
 // ------------------------ Helper Functions ------------------------
 
 /**
+ * Executes the 'llm' command with the given prompt and returns the text output.
+ * @param {string} prompt - The prompt to pass to the 'llm' command.
+ * @returns {string} The text output from the 'llm' command.
+ */
+function execLLM(prompt) {
+  try {
+    const output = execSync(`llm "${prompt}"`, { encoding: 'utf-8' });
+//    console.warn ({prompt, output});
+    return output.trim();
+  } catch (error) {
+    console.error('Error executing llm:', error.message);
+    return null;
+  }
+}
+
+function asNarrator(prompt) {
+  return execLLM("In the second person, as a narrator to a player, " + prompt);
+}
+
+function themedVersion(theme,template) {
+  return asNarrator(`reword the following text with a ${theme} theme: ${template}`);
+}
+
+function themedContinuation(theme,previous,template) {
+  previous = previous.replaceAll('\n', ' ');
+  return asNarrator(`continue the following narrative with a ${theme}-themed rewording of '${template}': ${previous}`);
+}
+
+function getTheme() {
+  return execLLM("A two-or-three word adjectival phrase, evocative of a dungeon (e.g. 'rusty iron' or 'dank mildewy').");
+}
+
+
+/**
  * Recursively checks whether all properties in `subset` are contained in `object`.
  */
 function isSubset(subset, object) {
@@ -97,18 +131,18 @@ function isSubset(subset, object) {
       while (step < maxSteps) {
         const candidateApplications = this.findNextApplication();
         if (!candidateApplications) {
-          console.log('No applicable rules found. Simulation halting.');
+//          console.log('No applicable rules found. Simulation halting.');
           break;
         }
         
         const candidate = this.weightedRandom(candidateApplications);
-        console.log(
-          `Step ${step + 1}: Applying rule of type ${candidate.rule.type} (weight ${candidate.rule.weight}).`
-        );
+//        console.log(
+//          `Step ${step + 1}: Applying rule of type ${candidate.rule.type} (weight ${candidate.rule.weight}).`
+//        );
         this.applyCandidate(candidate);
         step++;
       }
-      console.log(`Simulation ended after ${step} steps.`);
+//      console.log(`Simulation ended after ${step} steps.`);
     }
   
     /**
@@ -219,8 +253,7 @@ function isSubset(subset, object) {
         // Remove the edge that is to be replaced.
         delete this.graph.edges[match.edge.id];
         if (rule.rhs.subgraph) {
-          console.warn(JSON.stringify(match));
-          let subgraphResult = rule.rhs.subgraph({ src: match.src, dest: match.dest, edge: match.edge });
+          const subgraphResult = rule.rhs.subgraph({ src: match.src, dest: match.dest, edge: match.edge });
           if (subgraphResult) {
             const idMap = {};
             // Remap nodes with new unique IDs.
@@ -235,11 +268,13 @@ function isSubset(subset, object) {
             if (subgraphResult.edges)
               for (const edge of subgraphResult.edges) {
                 const newID = this.edgeIDGen.next();
-                const newEdge = Object.assign({}, edge, {
-                  id: newID,
-                  src: idMap[edge.src] || edge.src,
-                  dest: idMap[edge.dest] || edge.dest
-                });
+                const newEdge = JSON.parse(JSON.stringify(edge, (key, value) => {
+                  if (typeof value === 'string' && idMap[value]) {
+                  return idMap[value];
+                  }
+                  return value;
+                }));
+                newEdge.id = newID;
                 this.graph.edges[newID] = newEdge;
               }
           }
@@ -265,11 +300,11 @@ function isSubset(subset, object) {
             edge: null, // no edge modification
             subgraph: ({ src, dest }) => ({
               nodes: [
-                { id: "midpoint", label: { type: "room" } }
+                { id: "$midpoint", label: { type: "room" } }
               ],
               edges: [
-                { src: src.id, dest: "midpoint", label: { type: "path" } },
-                { src: "midpoint", dest: dest.id, label: { type: "path" } }
+                { src: src.id, dest: "$midpoint", label: { type: "path" } },
+                { src: "$midpoint", dest: dest.id, label: { type: "path" } }
               ]
             })
           }
@@ -283,11 +318,11 @@ function isSubset(subset, object) {
             edge: null,
             subgraph: ({ src, edge }) => ({
               nodes: [
-                { id: "dead_end", label: { type: "dead_end" } }
+                { id: "$dead_end", label: { type: "dead_end" } }
               ],
               edges: [
                 edge,
-                { src: src.id, dest: "dead_end", label: { type: "path" } }
+                { src: src.id, dest: "$dead_end", label: { type: "path" } }
               ]
             })
           }
@@ -311,19 +346,25 @@ function isSubset(subset, object) {
           lhs: { edge: { type: "path" } },
           rhs: {
             edge: null,
-            subgraph: ({ src, dest, edge }) => { console.warn({src,dest,edge}); return ({
-              nodes: [
-                { id: "key", label: { type: "key" } },
-                { id: "door", label: { type: "door" } }
-              ],
-              edges: [
-                { src: src.id, dest: "key", label: { type: "path" } },
-                { src: "key", dest: src.id, label: { type: "backtrack" } },
-                { src: src.id, dest: "door", label: { type: "path" } },
-                { src: "door", dest: dest.id, label: { type: "path" } },
-                { src: "key", dest: "door", label: { type: "opens" } },
-              ]
-            }) }
+            subgraph: ({ src, dest, edge }) => {
+              const themePhrase = getTheme();
+              const shutText = themedVersion (themePhrase, "There is a door here. It is closed and locked.");
+              const keyText = themedVersion(themePhrase, "There is a key here. You pick it up.");
+              const openText = themedContinuation(themePhrase, keyText + shutText, "The key unlocks the door, but will you pass through?");
+              
+              return {
+                nodes: [
+                  { id: "$key", label: { type: "key", text: keyText } },
+                  { id: "$door", label: { type: "door", text: shutText, theme: themePhrase } }
+                ],
+                edges: [
+                  { src: src.id, dest: "$key", label: { type: "path" } },
+                  { src: "$key", dest: src.id, label: { type: "backtrack" } },
+                  { src: src.id, dest: "$door", label: { type: "path" } },
+                  { src: "$door", dest: dest.id, label: { type: "path" }, prereq: { node_id: "$key", text: openText } }
+                ]
+              }
+            }
           }
         },
         {
@@ -424,7 +465,8 @@ const initialGraph = buildGraph(initialNodes, initialEdges);
 
     const simulator = new GraphGrammarSimulator(initialGraph, dungeonGrammar.grammar);
     simulator.run(20);
-    console.log("Final Graph:", JSON.stringify(simulator.graph, null, 2));
+    if (args.includes('-d'))
+      console.log(JSON.stringify(simulator.graph, null, 2));
 
     if (args.includes('-g')) {
       const dotString = graphToDot(simulator.graph);
