@@ -14,7 +14,7 @@ const seedrandom = require('seedrandom'); // Add this dependency
 function execLLM(prompt) {
   try {
     const output = execSync(`llm "${prompt.replaceAll('"',"'")}"`, { encoding: 'utf-8' });
-//    console.warn ({prompt, output});
+    console.warn ({prompt, output});
     return output.trim();
   } catch (error) {
     console.error('Error executing llm:', error.message);
@@ -26,14 +26,33 @@ function asNarrator(prompt) {
   return execLLM("In the second person, as a narrator to a player, " + prompt);
 }
 
+function asPlayer(prompt) {
+  return execLLM("In the second person imperative, as a player commanding their character, " + prompt);
+}
+
 function themedVersion(theme,template) {
   return asNarrator(`reword the following text with a ${theme} theme: ${template}`);
 }
 
 function themedContinuation(theme,previous,template) {
   previous = previous.replaceAll('\n', ' ');
-  return asNarrator(`continue the following narrative with a ${theme}-themed rewording of '${template}': ${previous}`);
+  return asNarrator(`give the next section of the narrative. The next section should reword the text '${template}' with a ${theme} theme. The narrative so far is: ${previous}`);
 }
+
+function contextualCommand(previous,template) {
+  previous = previous.replaceAll('\n', ' ');
+  return asPlayer(`give the next command after the narrative so far. The command should reword the command '${template}' to make it specific to the narrative so far, which is: ${previous}`);
+}
+
+function themedCommand(theme,template) {
+  return asPlayer(`reword the following command with a ${theme} theme: ${template}`);
+}
+
+function themedContextualCommand(theme,previous,template) {
+  previous = previous.replaceAll('\n', ' ');
+  return asPlayer(`give the next command after the narrative so far. The command should reword the text '${template}' with a ${theme} theme. The narrative so far is: ${previous}`);
+}
+
 
 function getTheme() {
   return execLLM("A two-or-three word adjectival phrase, evocative of a dungeon (e.g. 'rusty iron' or 'dank mildewy').");
@@ -350,7 +369,11 @@ function isSubset(subset, object) {
               const themePhrase = getTheme();
               const shutText = themedVersion (themePhrase, "There is a door here. It is closed and locked.");
               const keyText = themedVersion(themePhrase, "There is a key here. You pick it up.");
-              const openText = themedContinuation(themePhrase, keyText + shutText, "The key unlocks the door, but will you pass through?");
+              const keyPreviewText = themedVersion(themePhrase, "You see a passage.");
+              const keyCommandText = themedContextualCommand(themePhrase, keyPreviewText, "Take the passage.");
+              const doorContext = `${keyText} (...later in your adventure...) ${shutText}`;
+              const unlockText = contextualCommand(doorContext, "Unlock the door with the key (describing the key)");
+              const openText = themedContinuation(themePhrase, doorContext, "The key unlocks the door. You go through.");
               
               return {
                 nodes: [
@@ -358,10 +381,10 @@ function isSubset(subset, object) {
                   { id: "$door", label: { type: "door", text: shutText, theme: themePhrase } }
                 ],
                 edges: [
-                  { src: src.id, dest: "$key", label: { type: "path" } },
+                  { src: src.id, dest: "$key", label: { type: "path", before: keyPreviewText, link: keyCommandText } },
                   { src: "$key", dest: src.id, label: { type: "backtrack" } },
                   { src: src.id, dest: "$door", label: { type: "path" } },
-                  { src: "$door", dest: dest.id, label: { type: "path" }, prereq: { node_id: "$key", text: openText } }
+                  { src: "$door", dest: dest.id, label: { type: "path" }, prereq: { node_id: "$key", link: unlockText, after: openText } }
                 ]
               }
             }
