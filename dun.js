@@ -13,7 +13,7 @@ const seedrandom = require('seedrandom'); // Add this dependency
  */
 function execLLM(prompt) {
   try {
-    const output = execSync(`llm "${prompt}"`, { encoding: 'utf-8' });
+    const output = execSync(`llm "${prompt.replaceAll('"',"'")}"`, { encoding: 'utf-8' });
 //    console.warn ({prompt, output});
     return output.trim();
   } catch (error) {
